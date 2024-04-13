@@ -6,7 +6,7 @@ from aiogram.types import Message
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.utils.markdown import hbold
 from aiogram import F
-import zukiPy
+from gigachat import GigaChat
 import asyncio
 import json
 
@@ -23,7 +23,6 @@ BOT_TOKEN = data['key']
 GPT_TOKEN = data_['key']
 
 dp = Dispatcher()
-zukiAI = zukiPy.zukiCall(api_key=GPT_TOKEN, model="gpt-4")
 
 class StateMachine(aiogram.fsm.state.StatesGroup):
     explain_prompt = aiogram.fsm.state.State()
@@ -114,9 +113,11 @@ async def process_explain(message: types.Message, state: aiogram.fsm.context.FSM
     await state.update_data(explain_prompt=message.text)
     await state.set_state(None)
     await message.answer(text="Вот объяснение этой темы.")
-    chatresponse = await zukiAI.zuki_chat.sendMessage("Anonymous", "Привет! Объясни, пожалуйста, вот эту тему:" + message.text)
-    print(chatresponse)
-    await message.answer(text=chatresponse, reply_markup=keyboard_ai())
+    with GigaChat(credentials=GPT_TOKEN, verify_ssl_certs=False) as giga:
+        response = giga.chat("Объясни мне вот эту тему: " + message.text)
+        chatresponse = response.choices[0].message.content
+        await message.answer(text=chatresponse, reply_markup=keyboard_ai())
+    
 
 
 @dp.message(F.text.lower() == "подбери материалы")
