@@ -49,14 +49,24 @@ def keyboard_tags():
 
 def keyboard_plan():
     builder = ReplyKeyboardBuilder()
-    builder.button(text="Добавить задачу")
-    builder.button(text="Удалить теги")
-    builder.button(text="Добавить задачу")
-    builder.button(text="Изменить задачу")
-    builder.button(text="Список всех задач")
-    builder.button(text="Выполнить задачу")
-    builder.button(text="Список выполненных задач")
-    builder.button(text="Вывести статистику по задачам")
+    builder.row(
+        types.KeyboardButton(text="Добавить задачу")
+    )
+    builder.row(
+        types.KeyboardButton(text="Удалить теги"),
+        types.KeyboardButton(text="Изменить задачу")
+    )
+    builder.row(
+        types.KeyboardButton(text="Список всех задач"),
+        types.KeyboardButton(text="Выполнить задачу")
+    )
+    builder.row(
+        types.KeyboardButton(text="Список выполненных задач"),
+        types.KeyboardButton(text="Вывести статистику по задачам")
+    )
+    builder.row(
+        types.KeyboardButton(text="В начало")
+    )
     return builder.as_markup()
 
 def keyboard_edit_task():
@@ -70,7 +80,7 @@ def keyboard_edit_task():
         types.KeyboardButton(text="Изменить частоту напоминаний")
     )
     builder.row(
-        types.KeyboardButton(text="Назад")
+        types.KeyboardButton(text="В начало")
     )
 
 
@@ -83,7 +93,7 @@ def keyboard_ai():
         types.KeyboardButton(text="Сделай конспект")
     )
     builder.row(
-        types.KeyboardButton(text="Назад")
+        types.KeyboardButton(text="В начало")
     )
     return builder.as_markup()
 
@@ -113,26 +123,76 @@ async def process_explain(message: types.Message, state: aiogram.fsm.context.FSM
     await state.update_data(explain_prompt=message.text)
     await state.set_state(None)
     await message.answer(text="Вот объяснение этой темы.")
-    with GigaChat(credentials=GPT_TOKEN, verify_ssl_certs=False) as giga:
+    with GigaChat(credentials=GPT_TOKEN, verify_ssl_certs=False, model="GigaChat-Pro") as giga:
         response = giga.chat("Объясни мне вот эту тему: " + message.text)
         chatresponse = response.choices[0].message.content
         await message.answer(text=chatresponse, reply_markup=keyboard_ai())
-    
 
 
 @dp.message(F.text.lower() == "подбери материалы")
-async def search_for(message: types.Message):
-    await message.reply(text="Чем Вам помочь?", reply_markup=keyboard_ai())
+async def search_for(message: types.Message, state: aiogram.fsm.context.FSMContext):
+    await state.set_state(StateMachine.search_for_prompt)
+    await message.answer(text="Скажи, по какой теме надо подобрать материалы.", reply_markup=aiogram.types.ReplyKeyboardRemove())
+
+
+@dp.message(StateMachine.search_for_prompt)
+async def process_search_for(message: types.Message, state: aiogram.fsm.context.FSMContext):
+    await state.update_data(search_for_prompt=message.text)
+    await state.set_state(None)
+    await message.answer(text="Вот материалы:")
+    with GigaChat(credentials=GPT_TOKEN, verify_ssl_certs=False) as giga:
+        response = giga.chat("Подбери мне 10 разных ссылок, в которых ОБЯЗАТЕЛЬНО рассказывается про эту тему: " + message.text + ". Оформи их в виде маркированного списка.")
+        chatresponse = response.choices[0].message.content
+        await message.answer(text=chatresponse, reply_markup=keyboard_ai())
 
 
 @dp.message(F.text.lower() == "ответь на вопрос по коду")
-async def code(message: types.Message):
-    await message.reply(text="Чем Вам помочь?", reply_markup=keyboard_ai())
+async def code(message: types.Message, state: aiogram.fsm.context.FSMContext):
+    await state.set_state(StateMachine.code_prompt)
+    await message.answer(text="Отправь код.", reply_markup=aiogram.types.ReplyKeyboardRemove())
+
+
+@dp.message(StateMachine.code_prompt)
+async def code_process(message: types.Message, state: aiogram.fsm.context.FSMContext):
+    await state.update_data(code_prompt=message.text)
+    await state.set_state(StateMachine.code_question_prompt)
+    await message.answer(text="Теперь скажи свой вопрос по коду.", reply_markup=aiogram.types.ReplyKeyboardRemove())
+
+
+@dp.message(StateMachine.code_question_prompt)
+async def code_question_prompt(message: types.Message, state: aiogram.fsm.context.FSMContext):
+    await state.update_data(code_question_prompt=message.text)
+    await state.set_state(None)
+    await message.answer(text="Вот тебе ответ:")
+    with GigaChat(credentials=GPT_TOKEN, verify_ssl_certs=False) as giga:
+        data = await state.get_data()
+        print(data['code_prompt'])
+        response = giga.chat("Ответь на вопрос по коду. Вот код:" + data['code_prompt'] + "Вот вопрос:" + data['code_question_prompt'])
+        chatresponse = response.choices[0].message.content
+        await message.answer(text=chatresponse, reply_markup=keyboard_ai())
 
 
 @dp.message(F.text.lower() == "сделай конспект")
-async def simplify(message: types.Message):
-    await message.reply(text="Чем Вам помочь?", reply_markup=keyboard_ai())
+async def simplify(message: types.Message, state: aiogram.fsm.context.FSMContext):
+    await state.set_state(StateMachine.simplify_prompt)
+    await message.answer(text="Отправь текст, который надо законспектировать.", reply_markup=aiogram.types.ReplyKeyboardRemove())
+
+
+@dp.message(F.text.lower() == "в начало")
+async def to_start(message: types.Message, state: aiogram.fsm.context.FSMContext):
+    await message.answer(text="Возвращаю в начало!", reply_markup=keyboard_start())
+
+
+@dp.message(StateMachine.simplify_prompt)
+async def process_simplify(message: types.Message, state: aiogram.fsm.context.FSMContext):
+    await state.update_data(simplify_prompt=message.text)
+    await state.set_state(None)
+    await message.answer(text="Вот конспект:")
+    with GigaChat(credentials=GPT_TOKEN, verify_ssl_certs=False) as giga:
+        response = giga.chat("Кратко перескажи следующий текст: " + message.text)
+        chatresponse = response.choices[0].message.content
+        await message.answer(text=chatresponse, reply_markup=keyboard_ai())
+
 
 
 async def main() -> None:
